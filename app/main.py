@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.routers import auth, users, workflows
+from app.routers import auth, requests, users, workflows
 
 app = FastAPI(
     title=settings.app_name,
@@ -15,6 +15,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(workflows.router)
+app.include_router(requests.router)
 
 
 @app.get("/health", tags=["system"])
