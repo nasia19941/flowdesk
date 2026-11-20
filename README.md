@@ -4,6 +4,10 @@
 
 Workflow automation REST API built with FastAPI and PostgreSQL.
 
+**🌐 Live demo:** [flowdesk-yqls.onrender.com/docs](https://flowdesk-yqls.onrender.com/docs)
+
+> Hosted on Render's free tier: the first request after a period of inactivity can take about a minute while the server wakes up. You can register an account (it is created as an employee), create a request on the "Expense" workflow and submit it.
+
 I worked for three years as a Customer Service and Digitalization Agent, where I saw how much time teams lose on internal approvals that live in emails and spreadsheets: nobody knows who has to approve next, and there is no clear history of who decided what. FlowDesk is my attempt to model that process as a backend service: requests move through configurable approval steps, and every decision is recorded.
 
 ## ✨ Features
@@ -20,15 +24,42 @@ I worked for three years as a Customer Service and Digitalization Agent, where I
 - **"Pending for me"** inbox for each approver
 - **Full approval history**: who decided, at which step, with what comment
 - **22 automated tests** running on every push with GitHub Actions
+- **Continuous deployment**: every push to `main` is deployed automatically
 
 ## 🛠️ Tech stack
 
 - Python 3.15, FastAPI
-- PostgreSQL 16 (Docker)
+- PostgreSQL 16 (Docker locally, Neon in production)
 - SQLAlchemy 2.0 (ORM), Alembic (migrations)
 - Pydantic, Pydantic Settings (validation, env-based configuration)
 - PyJWT, pwdlib with Argon2 (authentication)
 - pytest, GitHub Actions (testing, CI)
+- Render (API hosting), Neon (managed PostgreSQL)
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    Dev[git push] --> GH[GitHub]
+    GH --> CI[GitHub Actions<br/>migrations + tests]
+    GH --> R[Render<br/>build + deploy]
+    R --> API[FastAPI]
+    API -->|SSL| DB[(Neon PostgreSQL)]
+```
+
+```
+app/
+├── main.py        # FastAPI app, routers, health check
+├── config.py      # settings from environment variables
+├── database.py    # engine, session, get_db dependency
+├── core/          # password hashing, JWT, auth dependencies
+├── models/        # SQLAlchemy models (database tables)
+├── schemas/       # Pydantic schemas (API input/output)
+├── services/      # business logic (approval engine)
+└── routers/       # API endpoints
+tests/             # pytest suite
+alembic/           # database migrations
+```
 
 ## 🗂️ Data model
 
@@ -57,20 +88,35 @@ erDiagram
 | POST | `/auth/login` | Public | Get a JWT access token |
 | GET | `/auth/me` | Authenticated | Current user |
 | GET | `/users` | Admin | List users (paginated) |
+| GET | `/users/{id}` | Admin | Get a user |
 | PATCH | `/users/{id}/role` | Admin | Change a user's role |
 | POST | `/workflows` | Admin | Create a workflow with its steps |
 | GET | `/workflows` | Authenticated | List workflows |
+| GET | `/workflows/{id}` | Authenticated | Get a workflow with its steps |
 | PUT | `/workflows/{id}` | Admin | Replace a workflow and its steps |
 | DELETE | `/workflows/{id}` | Admin | Delete a workflow (blocked if it has requests) |
 | POST | `/requests` | Authenticated | Create a draft request |
 | GET | `/requests/mine` | Authenticated | My requests, optional `?status=` filter |
 | GET | `/requests/pending-for-me` | Authenticated | Requests waiting for my role |
+| GET | `/requests/{id}` | Requester, approvers, admin | Get a request |
 | POST | `/requests/{id}/submit` | Requester | `DRAFT → PENDING` |
 | POST | `/requests/{id}/approve` | Approver of current step | Move to the next step or approve |
 | POST | `/requests/{id}/reject` | Approver of current step | Reject with a comment |
 | GET | `/requests/{id}/actions` | Requester, approvers, admin | Approval history |
+| GET | `/health` | Public | API and database status |
 
 Full interactive documentation at `/docs` (Swagger UI).
+
+### Example flow
+
+1. An admin creates the **Expense** workflow: `finance → manager → admin`
+2. An employee creates a request (`DRAFT`) and submits it (`PENDING`, step 1)
+3. A finance user approves it → step 2
+4. A manager approves it → step 3
+5. An admin approves it → `APPROVED`
+6. `GET /requests/{id}/actions` shows the three decisions in order
+
+If any approver rejects the request (with a comment), it becomes `REJECTED` immediately.
 
 ## 🚀 Getting started
 
@@ -118,9 +164,17 @@ docker exec -it flowdesk-db createdb -U flowdesk flowdesk_test
 pytest -v
 ```
 
-The tests run against a real PostgreSQL database (`flowdesk_test`). Each test runs inside a transaction that is rolled back at the end, so tests never affect each other. They cover authentication, role-based access, workflow management and the full approval flow.
+The tests run against a real PostgreSQL database (`flowdesk_test`), because the project relies on PostgreSQL features such as ENUM types and row locking. Each test runs inside a transaction that is rolled back at the end, so tests never affect each other. They cover authentication, role-based access, workflow management and the full approval flow.
 
 On every push, GitHub Actions starts a PostgreSQL service, runs the Alembic migrations on an empty database and then runs the test suite.
+
+## 🌐 Deployment
+
+- **API**: Render web service. Build: `pip install -r requirements.txt`. Start: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Database**: Neon (PostgreSQL 16, Frankfurt), connected over SSL
+- **Configuration**: `DATABASE_URL` and `SECRET_KEY` are environment variables on Render, never committed to the repository
+- **Migrations** run on every deploy before the server starts. If a migration fails, the server does not start
+- **Auto-deploy**: every push to `main` triggers a new deploy
 
 ## 🧩 Challenges
 
@@ -145,6 +199,7 @@ The lesson for me: autogenerated migrations are a starting point, and I read and
 - [x] CRUD endpoints for workflows and requests
 - [x] Approval engine (state machine for request status)
 - [x] Tests with pytest and CI with GitHub Actions
-- [ ] Deployment
+- [x] Deployment (Render + Neon, auto-deploy on every push)
 - [ ] Email notifications when a request reaches an approver
 - [ ] Block step changes on workflows that have pending requests
+- [ ] Rate limiting on login
