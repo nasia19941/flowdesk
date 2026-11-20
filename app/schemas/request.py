@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import RequestStatus
+from app.models.enums import Decision, RequestStatus
 
 
 class RequestCreate(BaseModel):
@@ -26,3 +26,23 @@ class RequestRead(BaseModel):
     requester_id: int
     created_at: datetime
     updated_at: datetime
+
+
+
+class ApproveIn(BaseModel):
+    comment: str | None = Field(default=None, max_length=500)
+
+
+class RejectIn(BaseModel):
+    comment: str = Field(min_length=3, max_length=500)
+
+
+class RequestActionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_id: int
+    step_order: int
+    decision: Decision
+    comment: str | None
+    created_at: datetime
