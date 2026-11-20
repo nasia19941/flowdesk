@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI
+from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -22,3 +23,7 @@ app.include_router(requests.router)
 def health(db: Session = Depends(get_db)):
     db.execute(text("SELECT 1"))
     return {"status": "ok", "database": "connected"}
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
