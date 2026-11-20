@@ -1,0 +1,49 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flowdesk
+          POSTGRES_PASSWORD: flowdesk
+          POSTGRES_DB: flowdesk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowdesk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://flowdesk:flowdesk@localhost:5432/flowdesk
+      TEST_DATABASE_URL: postgresql+psycopg://flowdesk:flowdesk@localhost:5432/flowdesk_test
+      SECRET_KEY: ci-only-not-a-real-secret
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Create test database
+        run: PGPASSWORD=flowdesk psql -h localhost -U flowdesk -c "CREATE DATABASE flowdesk_test;"
+
+      - name: Run tests
+        run: pytest -v
